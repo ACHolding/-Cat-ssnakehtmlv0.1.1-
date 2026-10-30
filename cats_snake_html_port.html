@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cat's Snake HTML Port</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,Segoe UI,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 20% 10%,#17416d 0%,transparent 40%),radial-gradient(ellipse at 90% 85%,#38255c 0%,transparent 42%),#070d1c;color:#eef8ff;display:grid;place-items:center;overflow-x:hidden}
+body:before{content:"";position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent 0 46px,#ffffff07 47px 48px),repeating-linear-gradient(90deg,transparent 0 46px,#ffffff07 47px 48px);pointer-events:none}
+.shell{position:relative;width:min(96vw,980px);padding:24px;border:1px solid #ffffff28;border-radius:26px;background:#0b1425df;box-shadow:0 30px 100px #0009,0 0 60px #1d72ce22;backdrop-filter:blur(18px)}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{margin:0;font-size:clamp(23px,4vw,38px);letter-spacing:.04em}
+h1 span{color:#67e5ff}
+.tag{color:#8ea9ca;font-size:12px;letter-spacing:.18em}
+.pill{padding:8px 12px;border:1px solid #62cafa77;border-radius:30px;color:#83e5ff;font-size:12px}
+.arena{position:relative;margin-top:18px;border-radius:18px;overflow:hidden;background:#070f1c;border:1px solid #4e9fd344;box-shadow:inset 0 0 45px #0783ff12}
+canvas{display:block;width:100%;aspect-ratio:16/10;touch-action:none}
+.overlay{position:absolute;inset:0;background:linear-gradient(145deg,#091429ed,#111b35e9);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:13px}
+.overlay.hidden{display:none}
+.overlay h2{font-size:clamp(28px,5vw,54px);margin:0;text-shadow:0 0 24px #4dcfff70}
+.overlay p{color:#b8d0e9;max-width:460px;margin:0 0 8px;line-height:1.6}
+.buttons{display:flex;flex-direction:column;gap:9px;width:min(300px,100%)}
+button{cursor:pointer;border:1px solid #75d8ff66;border-radius:12px;padding:13px 18px;background:linear-gradient(120deg,#163e68,#183153);color:#fff;font:700 15px inherit;letter-spacing:.04em;transition:.15s}
+button:hover,button:focus-visible{background:#2678ac;box-shadow:0 0 22px #47c8ff44;transform:translateY(-1px)}
+button.primary{background:linear-gradient(110deg,#1689cf,#365bd7)}
+.hud{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:15px;font-weight:700}
+.hud strong{color:#7eeaff}
+.bottom{margin-top:13px;display:flex;justify-content:space-between;align-items:center;gap:12px;color:#a2b5d0;font-size:13px;flex-wrap:wrap}
+.touch{display:none;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(2,auto);gap:6px;justify-content:center;margin-top:15px}
+.touch button{padding:10px}
+.touch .up{grid-column:2;grid-row:1}
+.touch .left{grid-column:1;grid-row:2}
+.touch .down{grid-column:2;grid-row:2}
+.touch .right{grid-column:3;grid-row:2}
+@media(pointer:coarse){.touch{display:grid}}
+@media(max-width:600px){.shell{padding:12px;border-radius:14px}.overlay{padding:12px;gap:8px}.overlay p{font-size:13px}.buttons{gap:6px}button{padding:10px}}
+</style>
+</head>
+<body>
+<main class="shell">
+<header><div><div class="tag">CATSDK • FILES=OFF • WEB AUDIO</div><h1>CAT'S <span>SNAKE</span> HTML PORT</h1></div><div class="pill">NEON EDITION • 60 FPS</div></header>
+<section class="arena">
+<canvas id="game" width="960" height="600" aria-label="Snake game board"></canvas>
+<div id="overlay" class="overlay">
+<h2 id="screenTitle">🐱 CAT'S SNAKE</h2>
+<p id="screenText">A next-gen-inspired neon snake arcade. Original procedural visuals and synthesized sound. No external assets.</p>
+<div id="menu" class="buttons">
+<button class="primary" data-action="play">▶ PLAY GAME</button>
+<button data-action="help">? HELP</button>
+<button data-action="about">ⓘ ABOUT</button>
+<button data-action="exit">⏻ EXIT</button>
+</div>
+</div>
+</section>
+<div class="hud"><div>SCORE <strong id="score">0000</strong></div><div>BEST <strong id="best">0000</strong></div><div>LEVEL <strong id="level">01</strong></div><div>STATUS <strong id="status">MENU</strong></div></div>
+<div class="bottom"><span>ARROWS / WASD: MOVE • SPACE: PAUSE • ESC: MENU</span><button id="pauseBtn">Ⅱ PAUSE</button></div>
+<div class="touch"><button class="up" data-dir="up">▲</button><button class="left" data-dir="left">◀</button><button class="down" data-dir="down">▼</button><button class="right" data-dir="right">▶</button></div>
+</main>
+<script>
+(()=>{
+'use strict';
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const overlay=document.getElementById('overlay'),title=document.getElementById('screenTitle'),desc=document.getElementById('screenText'),menu=document.getElementById('menu');
+const scoreEl=document.getElementById('score'),bestEl=document.getElementById('best'),levelEl=document.getElementById('level'),statusEl=document.getElementById('status');
+const cols=32,rows=20,cell=30;
+let state='menu',snake,dir,nextDir,food,score=0,best=0,tick=0,last=0,particles=[],stars=[],audio=null;
+
+try{best=Number(localStorage.getItem('cats-snake-best'))||0}catch{}
+bestEl.textContent=String(best).padStart(4,'0');
+for(let i=0;i<90;i++)stars.push({x:Math.random()*960,y:Math.random()*600,r:Math.random()*1.7+.4,phase:Math.random()*6.28});
+
+function sound(freq=440,dur=.1,type='sine',vol=.08){
+  try{
+    audio??=new (window.AudioContext||window.webkitAudioContext)();
+    if(audio.state==='suspended')audio.resume();
+    const osc=audio.createOscillator(),gain=audio.createGain(),t=audio.currentTime;
+    osc.type=type;
+    osc.frequency.setValueAtTime(freq,t);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(50,freq*.7),t+dur);
+    gain.gain.setValueAtTime(vol,t);
+    gain.gain.exponentialRampToValueAtTime(.001,t+dur);
+    osc.connect(gain);gain.connect(audio.destination);
+    osc.start(t);osc.stop(t+dur);
+  }catch{}
+}
+
+function spawnFood(){
+  const available=[];
+  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++)if(!snake.some(p=>p.x===x&&p.y===y))available.push({x,y});
+  if(!available.length){particles.length=0;end(true);return}
+  food=available[Math.floor(Math.random()*available.length)];
+}
+
+function reset(){
+  snake=[{x:8,y:10},{x:7,y:10},{x:6,y:10}];
+  dir={x:1,y:0};nextDir={...dir};
+  score=0;tick=0;particles=[];
+  spawnFood();updateHud();
+}
+
+function updateHud(){
+  scoreEl.textContent=String(score).padStart(4,'0');
+  bestEl.textContent=String(best).padStart(4,'0');
+  levelEl.textContent=String(1+Math.floor(score/50)).padStart(2,'0');
+  statusEl.textContent=state.toUpperCase();
+}
+
+function show(t,d,buttons){
+  title.textContent=t;desc.textContent=d;menu.innerHTML='';
+  for(const [label,action,primary] of buttons){
+    const b=document.createElement('button');
+    b.textContent=label;b.dataset.action=action;
+    if(primary)b.className='primary';
+    menu.appendChild(b);
+  }
+  overlay.classList.remove('hidden');
+}
+
+function play(){reset();state='playing';overlay.classList.add('hidden');last=performance.now();updateHud();sound(660,.12)}
+
+function pause(){
+  if(state==='playing'){
+    state='paused';
+    show('Ⅱ PAUSED','Your snake is waiting. Take your time!',[['▶ RESUME','resume',true],['⌂ MAIN MENU','home',false]]);
+  }else if(state==='paused')resume();
+  updateHud();
+}
+
+function resume(){state='playing';overlay.classList.add('hidden');last=performance.now();updateHud()}
+
+function home(){
+  state='menu';
+  show('🐱 CAT\'S SNAKE','A next-gen-inspired neon snake arcade. Original procedural visuals and synthesized sound. No external assets.',[['▶ PLAY GAME','play',true],['? HELP','help',false],['ⓘ ABOUT','about',false],['⏻ EXIT','exit',false]]);
+  updateHud();
+}
+
+function end(win=false){
+  state='over';
+  sound(win?800:180,.3,'sawtooth',.055);
+  show(win?'🏆 BOARD CLEARED!':'💥 GAME OVER',`Score: ${score} • Best: ${best}. Ready for another run?`,[['↻ PLAY AGAIN','play',true],['⌂ MAIN MENU','home',false]]);
+  updateHud();
+}
+
+/* FIX 1: compare against nextDir, not dir, so quick double-turns can't reverse into the neck */
+function change(x,y){
+  if(state!=='playing')return;
+  if(x===-nextDir.x&&y===-nextDir.y)return;
+  nextDir={x,y};
+}
+
+function step(){
+  dir=nextDir;
+  const head={x:snake[0].x+dir.x,y:snake[0].y+dir.y};
+  const eating=food&&head.x===food.x&&head.y===food.y;
+  const body=eating?snake:snake.slice(0,-1);
+  if(head.x<0||head.x>=cols||head.y<0||head.y>=rows||body.some(p=>p.x===head.x&&p.y===head.y)){
+    particles.length=0; /* FIX 2: clear particles on death */
+    end();return;
+  }
+  snake.unshift(head);
+  if(eating){
+    score+=10;
+    for(let i=0;i<22;i++)particles.push({x:(food.x+.5)*cell,y:(food.y+.5)*cell,vx:(Math.random()-.5)*190,vy:(Math.random()-.5)*190,life:1});
+    sound(620+Math.min(score,600),.11,'triangle');
+    if(score>best){best=score;try{localStorage.setItem('cats-snake-best',best)}catch{}}
+    spawnFood();
+  }else snake.pop();
+  updateHud();
+}
+
+function draw(now,dt){
+  ctx.fillStyle='#081326';ctx.fillRect(0,0,960,600);
+  const g=ctx.createRadialGradient(480,300,40,480,300,630);
+  g.addColorStop(0,'#12335a');g.addColorStop(1,'#061020');
+  ctx.fillStyle=g;ctx.fillRect(0,0,960,600);
+  for(const s of stars){
+    ctx.globalAlpha=.24+.3*Math.sin(now*.0015+s.phase)**2;
+    ctx.fillStyle='#8adfff';ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  ctx.strokeStyle='#69bbff12';ctx.lineWidth=1;
+  for(let x=0;x<=960;x+=cell){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,600);ctx.stroke()}
+  for(let y=0;y<=600;y+=cell){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(960,y);ctx.stroke()}
+  if(food){
+    const x=(food.x+.5)*cell,y=(food.y+.5)*cell;
+    ctx.shadowColor='#ff64b9';ctx.shadowBlur=22;
+    ctx.fillStyle='#ff67b6';ctx.beginPath();ctx.arc(x,y,9+Math.sin(now*.006)*2,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#fff0f7';ctx.beginPath();ctx.arc(x-3,y-3,3,0,Math.PI*2);ctx.fill();
+  }
+  if(snake){
+    snake.forEach((p,i)=>{
+      const x=p.x*cell+2,y=p.y*cell+2;
+      ctx.shadowColor=i?'#00d6b4':'#73faff';
+      ctx.shadowBlur=i?10:22;
+      ctx.fillStyle=i?`hsl(${165+i*2},80%,${Math.max(29,53-i*.6)}%)`:'#8efbff';
+      ctx.beginPath();ctx.roundRect(x,y,cell-4,cell-4,7);ctx.fill();
+      ctx.shadowBlur=0;
+      if(!i){
+        ctx.fillStyle='#062b37';
+        const ex=dir.x?0:7,ey=dir.y?0:7;
+        ctx.beginPath();
+        ctx.arc(x+9+ex,y+9+ey,2.7,0,7);
+        ctx.arc(x+20+ex,y+9+ey,2.7,0,7);
+        ctx.fill();
+      }
+    });
+  }
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;
+    if(p.life<=0){particles.splice(i,1);continue}
+    ctx.globalAlpha=p.life;
+    ctx.fillStyle='#ffc5e8';ctx.fillRect(p.x,p.y,4,4);
+  }
+  ctx.globalAlpha=1;
+  const edge=ctx.createLinearGradient(0,0,960,600);
+  edge.addColorStop(0,'#4cbbff');edge.addColorStop(.5,'#42f0c5');edge.addColorStop(1,'#916cff');
+  ctx.strokeStyle=edge;ctx.lineWidth=5;ctx.strokeRect(2,2,956,596);
+}
+
+function frame(now){
+  const dt=Math.min((now-last)/1000,.06)||0;
+  last=now;
+  if(state==='playing'){
+    tick+=dt;
+    const interval=Math.max(.075,.17-Math.floor(score/50)*.012);
+    while(tick>=interval&&state==='playing'){step();tick-=interval}
+  }
+  draw(now,dt);
+  requestAnimationFrame(frame);
+}
+
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-action]');
+  if(!b)return;
+  sound(420,.05);
+  switch(b.dataset.action){
+    case'play':play();break;
+    case'resume':resume();break;
+    case'home':home();break;
+    case'help':state='help';show('HOW TO PLAY','Eat pink energy orbs to grow. Avoid walls and your own tail. Use Arrow keys or WASD. SPACE pauses. ESC returns to the menu. On touchscreens, use the direction pad.',[['← BACK','home',true]]);break;
+    case'about':state='about';show('ABOUT CAT\'S SNAKE','Cat\'s Snake HTML Port • CatSDK 2026. PS5-inspired presentation only: original procedural canvas graphics, Web Audio synthesizer, no external files, no Sony or PlayStation assets.',[['← BACK','home',true]]);break;
+    case'exit':state='exit';show('THANKS FOR PLAYING!','Browsers usually prevent games from closing their own tab. You can close this tab yourself, or return to the menu.',[['⌂ MAIN MENU','home',true]]);break;
+  }
+});
+
+document.getElementById('pauseBtn').addEventListener('click',pause);
+
+/* FIX 3: ESC pauses mid-run instead of wiping the score */
+document.addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))e.preventDefault();
+  if(k==='escape'){
+    if(state==='playing'||state==='paused')pause();
+    else home();
+    return;
+  }
+  if(k===' '){pause();return}
+  const d={arrowup:[0,-1],w:[0,-1],arrowdown:[0,1],s:[0,1],arrowleft:[-1,0],a:[-1,0],arrowright:[1,0],d:[1,0]}[k];
+  if(d)change(...d);
+  if(k==='enter'&&state==='menu')play();
+});
+
+document.querySelectorAll('[data-dir]').forEach(b=>b.addEventListener('click',()=>{
+  const d={up:[0,-1],down:[0,1],left:[-1,0],right:[1,0]}[b.dataset.dir];
+  change(...d);
+}));
+
+let touchStart=null;
+canvas.addEventListener('touchstart',e=>{touchStart=[e.touches[0].clientX,e.touches[0].clientY]},{passive:true});
+canvas.addEventListener('touchend',e=>{
+  if(!touchStart)return;
+  const dx=e.changedTouches[0].clientX-touchStart[0],dy=e.changedTouches[0].clientY-touchStart[1];
+  if(Math.max(Math.abs(dx),Math.abs(dy))>20)
+    change(Math.abs(dx)>Math.abs(dy)?Math.sign(dx):0,Math.abs(dy)>Math.abs(dx)?Math.sign(dy):0);
+  touchStart=null;
+},{passive:true});
+
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
